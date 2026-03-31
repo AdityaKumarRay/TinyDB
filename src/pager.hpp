@@ -98,3 +98,7 @@ struct Pager {
         }
     }
 };
+
+inline uint32_t get_unused_page_num(Pager* pager) {
+    return pager->num_pages;
+}
