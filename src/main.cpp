@@ -91,29 +91,26 @@ ExecuteResult execute_insert(Statement& statement, Table& table) {
     Row* row_to_insert = &statement.row_to_insert;
     uint32_t key_to_insert = row_to_insert->id;
     
-    Cursor* cursor = table_find(&table, key_to_insert);
+    auto cursor = table_find(&table, key_to_insert);
 
     if (cursor->cell_num < num_cells) {
         uint32_t key_at_index = *leaf_node_key(node, cursor->cell_num);
         if (key_at_index == key_to_insert) {
-            delete cursor;
             return ExecuteResult::EXECUTE_DUPLICATE_KEY;
         }
     }
     
     if (num_cells >= LEAF_NODE_MAX_CELLS) {
-        delete cursor;
         return ExecuteResult::EXECUTE_TABLE_FULL; // Splitting implemented in Phase 5
     }
 
-    leaf_node_insert(cursor, row_to_insert->id, row_to_insert);
+    leaf_node_insert(cursor.get(), row_to_insert->id, row_to_insert);
 
-    delete cursor;
     return ExecuteResult::EXECUTE_SUCCESS;
 }
 
 ExecuteResult execute_select(Table& table) {
-    Cursor* cursor = Cursor::table_start(&table);
+    auto cursor = Cursor::table_start(&table);
     Row row;
 
     while (!(cursor->end_of_table)) {
@@ -123,7 +120,6 @@ ExecuteResult execute_select(Table& table) {
         cursor->advance();
     }
     
-    delete cursor;
     return ExecuteResult::EXECUTE_SUCCESS;
 }
 

@@ -1,35 +1,36 @@
 #pragma once
 
 #include "row.hpp"
-#include <fcntl.h>
-#include <unistd.h>
 #include <iostream>
-#include <sys/stat.h>
+#include <fstream>
 #include <vector>
+#include <array>
+#include <string>
 
 struct Pager {
-    int file_descriptor;
+    std::fstream file;
     uint32_t file_length;
     uint32_t num_pages;
-    void* pages[TABLE_MAX_PAGES];
+    std::array<void*, TABLE_MAX_PAGES> pages;
 
     explicit Pager(const std::string& filename) {
-        file_descriptor = open(filename.c_str(),
-                               O_RDWR | O_CREAT,
-                               S_IWUSR | S_IRUSR);
-
-        if (file_descriptor == -1) {
-            std::cout << "Unable to open file\n";
-            exit(EXIT_FAILURE);
-        }
-
-        struct stat file_stat;
-        if (fstat(file_descriptor, &file_stat) == -1) {
-            std::cout << "Unable to get file stats\n";
-            exit(EXIT_FAILURE);
-        }
+        // Try opening existing file
+        file.open(filename, std::ios::in | std::ios::out | std::ios::binary);
         
-        file_length = static_cast<uint32_t>(file_stat.st_size);
+        // If it doesn't exist, create it
+        if (!file.is_open()) {
+            file.clear(); // Clear error flags
+            file.open(filename, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
+            if (!file.is_open()) {
+                std::cout << "Unable to open or create file\n";
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        file.seekg(0, std::ios::end);
+        file_length = file.tellg();
+        file.seekg(0, std::ios::beg);
+
         num_pages = file_length / PAGE_SIZE;
 
         if (file_length % PAGE_SIZE != 0) {
@@ -37,13 +38,13 @@ struct Pager {
             exit(EXIT_FAILURE);
         }
 
-        for (uint32_t i = 0; i < TABLE_MAX_PAGES; i++) {
-            pages[i] = nullptr;
-        }
+        pages.fill(nullptr);
     }
 
     ~Pager() {
-        close(file_descriptor);
+        if (file.is_open()) {
+            file.close();
+        }
     }
 
     void* get_page(uint32_t page_num) {
@@ -61,10 +62,10 @@ struct Pager {
             }
 
             if (page_num < num_pages_file) {
-                lseek(file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
-                ssize_t bytes_read = read(file_descriptor, page, PAGE_SIZE);
-                if (bytes_read == -1) {
-                    std::cout << "Error reading file: " << errno << "\n";
+                file.seekg(page_num * PAGE_SIZE, std::ios::beg);
+                file.read(static_cast<char*>(page), PAGE_SIZE);
+                if (file.fail() && !file.eof()) {
+                    std::cout << "Error reading file.\n";
                     exit(EXIT_FAILURE);
                 }
             }
@@ -85,17 +86,18 @@ struct Pager {
             exit(EXIT_FAILURE);
         }
 
-        off_t offset = lseek(file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
-        if (offset == -1) {
-            std::cout << "Error seeking: " << errno << "\n";
+        file.seekp(page_num * PAGE_SIZE, std::ios::beg);
+        if (file.fail()) {
+            std::cout << "Error seeking.\n";
             exit(EXIT_FAILURE);
         }
 
-        ssize_t bytes_written = write(file_descriptor, pages[page_num], PAGE_SIZE);
-        if (bytes_written == -1) {
-            std::cout << "Error writing: " << errno << "\n";
+        file.write(static_cast<char*>(pages[page_num]), PAGE_SIZE);
+        if (file.fail()) {
+            std::cout << "Error writing.\n";
             exit(EXIT_FAILURE);
         }
+        file.flush();
     }
 };
 

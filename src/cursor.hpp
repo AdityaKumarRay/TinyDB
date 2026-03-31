@@ -2,6 +2,7 @@
 
 #include "table.hpp"
 #include "btree.hpp"
+#include <memory>
 
 struct Cursor {
     Table* table;
@@ -9,8 +10,8 @@ struct Cursor {
     uint32_t cell_num;
     bool end_of_table;
 
-    static Cursor* table_start(Table* tbl) {
-        Cursor* cursor = new Cursor();
+    static std::unique_ptr<Cursor> table_start(Table* tbl) {
+        auto cursor = std::make_unique<Cursor>();
         cursor->table = tbl;
         cursor->page_num = tbl->root_page_num;
         cursor->cell_num = 0;
@@ -22,8 +23,8 @@ struct Cursor {
         return cursor;
     }
 
-    static Cursor* table_end(Table* tbl) {
-        Cursor* cursor = new Cursor();
+    static std::unique_ptr<Cursor> table_end(Table* tbl) {
+        auto cursor = std::make_unique<Cursor>();
         cursor->table = tbl;
         cursor->page_num = tbl->root_page_num;
 
@@ -49,7 +50,7 @@ struct Cursor {
     }
 };
 
-void leaf_node_insert(Cursor* cursor, uint32_t key, Row* value) {
+inline void leaf_node_insert(Cursor* cursor, uint32_t key, Row* value) {
     void* node = cursor->table->pager->get_page(cursor->page_num);
 
     uint32_t num_cells = *leaf_node_num_cells(node);
@@ -73,14 +74,14 @@ void leaf_node_insert(Cursor* cursor, uint32_t key, Row* value) {
     value->serialize(static_cast<char*>(leaf_node_value(node, cursor->cell_num)));
 }
 
-Cursor* table_find(Table* table, uint32_t key) {
+inline std::unique_ptr<Cursor> table_find(Table* table, uint32_t key) {
     uint32_t root_page_num = table->root_page_num;
     void* root_node = table->pager->get_page(root_page_num);
 
     // Assume root is a leaf for now
     uint32_t num_cells = *leaf_node_num_cells(root_node);
     
-    Cursor* cursor = new Cursor();
+    auto cursor = std::make_unique<Cursor>();
     cursor->table = table;
     cursor->page_num = root_page_num;
 
