@@ -6,7 +6,8 @@
 
 enum class MetaCommandResult {
     META_COMMAND_SUCCESS,
-    META_COMMAND_UNRECOGNIZED_COMMAND
+    META_COMMAND_UNRECOGNIZED_COMMAND,
+    META_COMMAND_EXIT
 };
 
 enum class PrepareResult {
@@ -34,7 +35,7 @@ struct Statement {
 
 MetaCommandResult do_meta_command(const std::string& command) {
     if (command == ".exit") {
-        exit(0);
+        return MetaCommandResult::META_COMMAND_EXIT;
     } else {
         return MetaCommandResult::META_COMMAND_UNRECOGNIZED_COMMAND;
     }
@@ -115,7 +116,13 @@ ExecuteResult execute_statement(Statement& statement, Table& table) {
 }
 
 int main(int argc, char* argv[]) {
-    Table table;
+    if (argc < 2) {
+        std::cout << "Must supply a database filename.\n";
+        exit(EXIT_FAILURE);
+    }
+
+    std::string filename = argv[1];
+    Table table(filename);
 
     std::string input_buffer;
     while (true) {
@@ -131,6 +138,8 @@ int main(int argc, char* argv[]) {
 
         if (input_buffer[0] == '.') {
             switch (do_meta_command(input_buffer)) {
+                case (MetaCommandResult::META_COMMAND_EXIT):
+                    return 0;
                 case (MetaCommandResult::META_COMMAND_SUCCESS):
                     continue;
                 case (MetaCommandResult::META_COMMAND_UNRECOGNIZED_COMMAND):
