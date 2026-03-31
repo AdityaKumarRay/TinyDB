@@ -3,6 +3,7 @@
 #include <sstream>
 #include "row.hpp"
 #include "table.hpp"
+#include "cursor.hpp"
 
 enum class MetaCommandResult {
     META_COMMAND_SUCCESS,
@@ -20,6 +21,7 @@ enum class PrepareResult {
 
 enum class ExecuteResult {
     EXECUTE_SUCCESS,
+    EXECUTE_DUPLICATE_KEY,
     EXECUTE_TABLE_FULL
 };
 
@@ -83,26 +85,45 @@ PrepareResult prepare_statement(const std::string& input, Statement& statement) 
 }
 
 ExecuteResult execute_insert(Statement& statement, Table& table) {
-    if (table.num_rows >= TABLE_MAX_ROWS) {
-        return ExecuteResult::EXECUTE_TABLE_FULL;
-    }
+    void* node = table.pager->get_page(table.root_page_num);
+    uint32_t num_cells = *leaf_node_num_cells(node);
 
     Row* row_to_insert = &statement.row_to_insert;
-    void* dest = table.row_slot(table.num_rows);
+    uint32_t key_to_insert = row_to_insert->id;
+    
+    Cursor* cursor = table_find(&table, key_to_insert);
 
-    row_to_insert->serialize(static_cast<char*>(dest));
-    table.num_rows += 1;
+    if (cursor->cell_num < num_cells) {
+        uint32_t key_at_index = *leaf_node_key(node, cursor->cell_num);
+        if (key_at_index == key_to_insert) {
+            delete cursor;
+            return ExecuteResult::EXECUTE_DUPLICATE_KEY;
+        }
+    }
+    
+    if (num_cells >= LEAF_NODE_MAX_CELLS) {
+        delete cursor;
+        return ExecuteResult::EXECUTE_TABLE_FULL; // Splitting implemented in Phase 5
+    }
 
+    leaf_node_insert(cursor, row_to_insert->id, row_to_insert);
+
+    delete cursor;
     return ExecuteResult::EXECUTE_SUCCESS;
 }
 
 ExecuteResult execute_select(Table& table) {
+    Cursor* cursor = Cursor::table_start(&table);
     Row row;
-    for (uint32_t i = 0; i < table.num_rows; i++) {
-        void* source = table.row_slot(i);
+
+    while (!(cursor->end_of_table)) {
+        void* source = cursor->value();
         row.deserialize(static_cast<const char*>(source));
         std::cout << "(" << row.id << ", " << row.username << ", " << row.email << ")\n";
+        cursor->advance();
     }
+    
+    delete cursor;
     return ExecuteResult::EXECUTE_SUCCESS;
 }
 
@@ -169,6 +190,9 @@ int main(int argc, char* argv[]) {
         switch (execute_statement(statement, table)) {
             case (ExecuteResult::EXECUTE_SUCCESS):
                 std::cout << "Executed.\n";
+                break;
+            case (ExecuteResult::EXECUTE_DUPLICATE_KEY):
+                std::cout << "Error: Duplicate key.\n";
                 break;
             case (ExecuteResult::EXECUTE_TABLE_FULL):
                 std::cout << "Error: Table full.\n";
